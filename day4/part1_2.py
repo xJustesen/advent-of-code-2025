@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -8,13 +8,22 @@ def read_data(path: str) -> list[str]:
     return data
 
 
-@dataclass(frozen=True)
+# Precomputed neighbour offsets (8 directions).
+NEIGHBOUR_OFFSETS: tuple[tuple[int, int], ...] = tuple(
+    (dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1) if not (dx == 0 and dy == 0)
+)
+
+
+@dataclass(frozen=True, slots=True)
 class Coord:
     x: int
     y: int
 
+    def adjacent(self) -> list["Coord"]:
+        return [Coord(self.x + dx, self.y + dy) for dx, dy in NEIGHBOUR_OFFSETS]
 
-@dataclass
+
+@dataclass(slots=True)
 class Cell:
     coord: Coord
     symbol: Literal[".", "@"]
@@ -23,34 +32,18 @@ class Cell:
         self.symbol = "."
 
 
-@dataclass
+@dataclass(slots=True)
 class Grid:
     cells: list[Cell]
-
-    def get_cell_by_coord(self, coord: Coord) -> Cell | None:
-        try:
-            return self.lookup_table[coord]
-        except KeyError:
-            return None
+    _lookup_table: dict[Coord, Cell] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self.lookup_table = {cell.coord: cell for cell in self.cells}
+        """Initializes the internal coordinate-to-cell lookup table."""
+        self._lookup_table = {cell.coord: cell for cell in self.cells}
 
-
-def get_adjacent_coords(coord: Coord) -> list[Coord]:
-    x = coord.x
-    y = coord.y
-
-    return [
-        Coord(x - 1, y - 1),
-        Coord(x - 1, y),
-        Coord(x - 1, y + 1),
-        Coord(x, y - 1),
-        Coord(x, y + 1),
-        Coord(x + 1, y - 1),
-        Coord(x + 1, y),
-        Coord(x + 1, y + 1),
-    ]
+    def get_cell_by_coord(self, coord: Coord) -> Cell | None:
+        """Returns the cell for a coordinate or None if it does not exist."""
+        return self._lookup_table.get(coord)
 
 
 def count_matches(cell: Cell, grid: Grid) -> int:
@@ -58,8 +51,7 @@ def count_matches(cell: Cell, grid: Grid) -> int:
     coord = cell.coord
 
     # Get adjacent cells
-    adjacent_coords = get_adjacent_coords(coord)
-    adj_cells = [grid.get_cell_by_coord(coord_) for coord_ in adjacent_coords]
+    adj_cells = [grid.get_cell_by_coord(coord_) for coord_ in coord.adjacent()]
 
     # Remove None entries
     adj_cells = [x for x in adj_cells if x is not None]
@@ -84,9 +76,12 @@ count = sum(count_matches(cell, grid) < 4 for cell in cells_to_check)
 print(count)
 
 # PART 2
+cells = grid.cells
 count = 0
 while True:
     cells_to_check = [cell for cell in cells if cell.symbol == "@"]
+
+    # Compute which are valid
     matches = [(cell, count_matches(cell, grid) < 4) for cell in cells_to_check]
 
     # Count number of valid cells
@@ -99,10 +94,9 @@ while True:
     # Increase total count of valid cells
     count += n_valid
 
-    # Update the valid cells in the grid
-    valid_cells = [cell for cell, is_valid in matches if is_valid]
-    for cell in grid.cells:
-        if cell in valid_cells:
+    # Remove the valid cells
+    for cell, is_valid in matches:
+        if is_valid:
             cell.remove()
 
 print(count)
